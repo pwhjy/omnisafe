@@ -90,7 +90,7 @@ class PensionPortfolioEnv(gym.Env):
         self.endday = endday
         self.lookback = lookback
         self.file = file
-        self.df = pd.read_parquet(self.file)  
+        self.df = pd.read_parquet(self.file, engine='pyarrow')  
         self.stocks_and_bonds_dim = stocks_and_bonds_dim
         self.hmax = hmax
         self.initial_amount = initial_amount
@@ -100,31 +100,24 @@ class PensionPortfolioEnv(gym.Env):
         self.action_space = action_space
         self.tech_indicator_list = tech_indicator_list
 
+        # 从start day到end day的所有股票数量self.stocks_and_bonds_dim
+        self.df.reset_index(inplace=True)
+        filtered_df = self.df[(self.df['date'] >= self.startday) & (self.df['date'] <= self.endday)]
+        unique_symbols_count = filtered_df['symbol'].nunique()
+        self.stocks_and_bonds_dim = unique_symbols_count
+
+        # 所有的symbol，按照字符序排序
+        self.sorted_symbols = sorted(filtered_df['symbol'].unique())
+
         # action_space normalization and shape is self.stock_dim
+        self.action_space = self.stocks_and_bonds_dim
         self.action_space = spaces.Box(low=0, high=1, shape=(self.action_space,))
 
-        self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(self.state_space + len(self.tech_indicator_list), self.state_space)
-        )
+        #state shape is (self.stocks_and_bonds_dim, self.state_space)
+        self.state = np.append()
 
         # load all data from a pandas dataframe
         self.train_data = self.df.loc[self.startday:self.endday]
-        
-        # 找到从startday到endday每天都有的股票list
-        result = self.train_data.reset_index().groupby('date')['symbol'].unique()
-        arrays = result.values.tolist()
-        stocks_sum = len(arrays)
-        arrays = [array.tolist() for array in arrays]
-        # 将所有列表连接成一个大列表
-        concatenated_list = np.concatenate(arrays)
-        self.stock_valid = set()
-        # 使用numpy.unique函数获取元素和对应的计数
-        unique_elements, counts = np.unique(concatenated_list, return_counts=True)
-        for element, count in zip(unique_elements, counts):
-            if count == stocks_sum:
-                self.stock_valid.add(element)
 
         self.covs = self.data["cov_list"].values[0]
         # self.state = np.append(
@@ -169,9 +162,15 @@ class PensionPortfolioEnv(gym.Env):
     ):
         self.asset_memory = [self.initial_amount]
         self.day = 0
-        # self.data = 
+        self.date_data = self.df.xs(self.startday, level='date')
+        # self.data = self.df.loc[self.startday]
         self.portfolio_value = self.initial_amount
+        self.terminal = False
+        self.portfolio_return_memory = [0]
+        self.actions_memory = [[1 / self.stocks_and_bonds_dim] * self.stocks_and_bonds_dim] # ?
+        self.date_memory = [self.df.]
 
+        return self.state, {}
 
     def save_asset_memoty(self):
         pass
